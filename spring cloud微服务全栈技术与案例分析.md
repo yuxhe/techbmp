@@ -3212,3 +3212,175 @@ show variables like '%uuid%';
     </bean>
     
 </beans>
+
+<dependency>
+			<groupId>com.github.yinjihuan</groupId>
+			<artifactId>smjdbctemplate</artifactId>
+			<version>1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>mysql</groupId>
+			<artifactId>mysql-connector-java</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>com.alibaba</groupId>
+			<artifactId>druid-spring-boot-starter</artifactId>
+			<version>1.1.10</version>
+		</dependency>
+		<dependency>
+			<groupId>com.dangdang</groupId>
+			<artifactId>sharding-jdbc-config-spring</artifactId>
+			<version>1.5.4.1</version>
+		</dependency>
+
+
+@Service
+public class UserServiceImpl extends EntityService<User> implements UserService {
+
+	public List<User> list() {
+		return super.list();
+	}
+
+	public Long add(User user) {
+		return (Long) super.save(user);
+	}
+
+	@Override
+	public User findById(Long id) {
+		return super.getById("id", id);
+	}
+
+	@Override
+	public User findByCity(String city) {
+		return super.getById("city", city);
+	}
+
+}
+
+
+xml 里面 & 用 &amp;代替
+
+
+sharding-jdbc 对于validationQuery="SELECT 1"的语句不支持
+
+处理思路 覆盖：
+
+
+@Component
+public class DbHealthIndicator implements HealthIndicator {
+    @Override
+    public Health health() {
+        int errorCode = check();
+        if (errorCode != 0) {
+            return Health.down().withDetail("Error Code", errorCode)  .build();
+        }
+        return Health.up().build();
+    }
+ 
+    int check(){
+		//可以实现自定义的数据库检测逻辑
+        return 0;
+    }
+}
+
+
+
+<dependency>
+    <groupId>com.dangdang</groupId>
+    <artifactId>sharding-jdbc-self-id-generator</artifactId>
+    <version>${sharding-jdbc.version}</version>
+</dependency>
+
+
+在DataSourceConfiguration.java 中创建bean.
+
+    @Bean
+    public IdGenerator getIdGenerator() {
+        return new CommonSelfIdGenerator();
+    }
+
+
+@Autowired
+    private IdGenerator idGenerator;
+
+idGenerator.generateId().longValue() //不重复的主键值   
+
+在使用官方提供的测试案例使用时，发现一个问题，就是Sharding-jdbc生成的分布式id全是偶数 ，并发不大的情况下偶数机率大，分布式id是个课题
+
+sharding-jdbc的分布式ID采用twitter开源的snowflake算法，不需要依赖任何第三方组件，这样其扩展性和维护性得到最大的简化；
+
+但是snowflake算法的缺陷（强依赖时间，如果时钟回拨，就会生成重复的ID），sharding-jdbc没有给出解决方案，如果用户想要强化，需要自行扩展
+
+分布式 ：选数据库、选表过程
+------------------------------------------------
+
+浑厚、磅礴
+
+天下雨水、千里黄河一壶收，从三百多米宽一下变到三十来米壶口，在壶口咆哮；
+
+鹳雀楼 ，小小主簿王之涣，在鹳雀楼发出千里之势，欲穷千里目，更上一层楼。这就是盛唐
+
+如何展开一个日志 logging.level.com.cxytiandi=DEBUG
+
+#主从分离默认走从库读取数据
+
+import org.springframework.stereotype.Service;
+
+import com.cxytiandi.jdbc.EntityService;
+import com.dangdang.ddframe.rdb.sharding.api.HintManager;
+import com.fangjia.sjdbc.po.User;
+
+@Service
+public class UserServiceImpl extends EntityService<User> implements UserService {
+	
+	public List<User> list() {
+		// 强制路由主库
+		HintManager.getInstance().setMasterRouteOnly();
+		return super.list();
+	}
+
+#当当网的主从分离配置
+
+
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:rdb="http://www.dangdang.com/schema/ddframe/rdb" 
+    xsi:schemaLocation="http://www.springframework.org/schema/beans 
+                        http://www.springframework.org/schema/beans/spring-beans.xsd
+                        http://www.springframework.org/schema/context 
+                        http://www.springframework.org/schema/context/spring-context.xsd 
+                        http://www.dangdang.com/schema/ddframe/rdb 
+                        http://www.dangdang.com/schema/ddframe/rdb/rdb.xsd 
+                        ">
+    
+    <!-- 主数据 -->
+    <bean id="ds_0" class="com.alibaba.druid.pool.DruidDataSource" destroy-method="close" primary="true">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver" />
+        <property name="url" value="jdbc:mysql://192.168.220.153:3306/cxytiandi_0?characterEncoding=utf-8&amp;useInformationSchema=true&amp;useSSL=false&amp;serverTimezone=GMT" />
+        <property name="username" value="root" />
+        <property name="password" value="" />
+    </bean>
+    
+    <!-- 从数据 -->
+    <bean id="ds_1" class="com.alibaba.druid.pool.DruidDataSource" destroy-method="close">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver" />
+        <property name="url" value="jdbc:mysql://192.168.220.153:3309/ds_2?characterEncoding=utf-8&amp;useSSL=false&amp;serverTimezone=GMT" />
+        <property name="username" value="root" />
+        <property name="password" value="" />
+    </bean>
+    
+    <!-- 读写分离数据源 -->
+    <rdb:master-slave-data-source id="dataSource" master-data-source-ref="ds_0" slave-data-sources-ref="ds_1"/>
+     
+    <!-- 增强版JdbcTemplate -->
+    <bean id="cxytiandiJdbcTemplate" class="com.cxytiandi.jdbc.CxytiandiJdbcTemplate">
+    	<property name="dataSource" ref="dataSource"/>
+    	<constructor-arg>
+    		<value>com.fangjia.sjdbc.po</value>
+    	</constructor-arg>
+    </bean>
+    
+</beans>
